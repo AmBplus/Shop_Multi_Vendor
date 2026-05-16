@@ -23,10 +23,12 @@
 
 | # | قابلیت | اجباری | قابل غیرفعال‌سازی |
 |---|--------|--------|-------------------|
-| 1 | ثبت‌نام با ایمیل و رمز عبور | ✅ | خیر |
+| 1 | ثبت‌نام با ایمیل و رمز عبور | ✅ | **بله** – می‌توان غیرفعال کرد تا ثبت‌نام فقط با شماره موبایل ممکن باشد |
 | 2 | ثبت‌نام با شماره موبایل | ✅ | بله |
 | 3 | تأیید ایمیل با لینک فعال‌سازی | ✅ | بله |
 | 4 | تأیید شماره موبایل با کد OTP | ✅ | بله |
+
+> **نکته:** حداقل یکی از روش‌های ثبت‌نام باید فعال باشد. سیستم از طریق جدول `settings` این حالت‌ها را کنترل می‌کند.
 
 ### 1.2 روش‌های ورود
 
@@ -38,9 +40,8 @@
 | 8 | Social Login – Apple | Sign in with Apple |
 | 9 | Social Login – Twitter/X | OAuth 2.0 |
 | 10 | ورود بدون رمز عبور (Magic Link) | لینک یک‌بار مصرف |
-| 11 | ورود با بیومتریک – Fingerprint | WebAuthn / FIDO2 |
-| 12 | ورود با بیومتریک – Face ID | WebAuthn / FIDO2 |
-| 13 | Single Sign-On (SSO) | SAML 2.0 / OIDC |
+
+> **حذف شده:** ورود بیومتریک (Fingerprint / Face ID) و Single Sign-On (SSO) در این مرحله مورد نیاز نیستند.
 
 ### 1.3 احراز هویت دو مرحله‌ای (2FA)
 
@@ -71,7 +72,28 @@
 | 26 | بازیابی رمز عبور با SMS | کد OTP |
 | 27 | سؤالات امنیتی | اختیاری |
 | 28 | تغییر رمز عبور اجباری دوره‌ای | قابل تنظیم توسط ادمین |
-| 29 | CAPTCHA در فرم‌های حساس | reCAPTCHA v3 / hCaptcha |
+| 29 | **کپچای اختصاصی** | کد تصویری ذخیره‌شده در Redis با TTL مشخص؛ تصویر به همراه Session ID به کاربر برگشت داده می‌شود |
+
+#### طراحی کپچای اختصاصی
+
+```
+POST /api/captcha/generate
+← { sessionId: "uuid", imageBase64: "data:image/png;base64,..." }
+   [Redis Key: captcha:{sessionId} → "ABCD1" | TTL: 3 دقیقه]
+
+POST /api/captcha/verify
+Body: { sessionId: "uuid", answer: "ABCD1" }
+← 200 OK { token: "captcha_verified_token" }   # استفاده در فرم‌های حساس
+   [Redis Key پس از تأیید حذف می‌شود – یک‌بار مصرف]
+```
+
+**ویژگی‌ها:**
+- تولید تصویر سمت سرور (کتابخانه SixLabors.ImageSharp یا SkiaSharp)
+- کد تصادفی ۵–۶ کاراکتر (حروف و اعداد)
+- TTL قابل تنظیم از تنظیمات سامانه
+- Session ID یکتا برای هر درخواست
+- یک‌بار مصرف (پس از تأیید موفق، کلید Redis حذف می‌شود)
+- لینک API داخلی برای نمایش تصویر: `GET /api/captcha/image/{sessionId}`
 
 ### 1.6 امنیت API و شبکه
 
@@ -97,6 +119,7 @@ SuperAdmin
         ├── Warehouse Manager
         └── Delivery Agent
 Vendor (فروشنده)
+Reseller / همکار (همکار فروش)
 Customer (مشتری)
 Guest (مهمان)
 ```
@@ -106,13 +129,16 @@ Guest (مهمان)
 | 34 | Super Admin | همه چیز |
 | 35 | Admin | مدیریت کامل به جز تنظیمات سیستمی بحرانی |
 | 36 | Vendor | پنل فروشنده، محصولات، سفارشات خود |
-| 37 | Customer | خرید، پروفایل، سفارشات خود |
-| 38 | Guest | مشاهده محصولات، جستجو |
-| 39 | Content Manager | مدیریت محتوا، بلاگ، صفحات |
-| 40 | Support Agent | تیکت‌ها، چت، مشاهده سفارشات |
-| 41 | Accountant | گزارش‌های مالی، فاکتورها |
-| 42 | Warehouse Manager | موجودی، انبارها، انتقالات |
-| 43 | Delivery Agent | سفارشات ارسالی، وضعیت تحویل |
+| 37 | همکار (Reseller) | مشاهده قیمت‌های ویژه همکاران، خرید با تخفیف سطح اعتباری |
+| 38 | Customer | خرید، پروفایل، سفارشات خود |
+| 39 | Guest | مشاهده محصولات، جستجو |
+| 40 | Content Manager | مدیریت محتوا، بلاگ، صفحات |
+| 41 | Support Agent | تیکت‌ها، چت، مشاهده سفارشات |
+| 42 | Accountant | گزارش‌های مالی، فاکتورها |
+| 43 | Warehouse Manager | موجودی، انبارها، انتقالات |
+| 44 | Delivery Agent | سفارشات ارسالی، وضعیت تحویل |
+
+> **نقش همکار:** هر همکار یک سطح اعتباری (Tier) دارد که درصد تخفیف او از قیمت عادی مشخص می‌کند. این تخفیف در بخش قیمت‌گذاری محصول (ماژول ۳ – بخش ۳) تعریف می‌شود.
 
 ### 2.2 نقش‌های سفارشی
 
@@ -194,6 +220,47 @@ permissions:
 | 68 | بیوگرافی کوتاه | textarea | ❌ |
 | 69 | لینک‌های شبکه‌های اجتماعی | json | ❌ |
 
+**فیلدهای Audit (برای همه موجودیت‌های سیستم):**
+
+| فیلد | نوع | توضیح |
+|------|-----|--------|
+| `CreatedAt` | datetime | زمان ایجاد |
+| `CreatedBy` | long (FK→User) | شناسه کاربر ایجادکننده |
+| `UpdatedAt` | datetime? | زمان آخرین ویرایش |
+| `UpdatedBy` | long? (FK→User) | شناسه کاربر ویرایش‌کننده |
+| `DeletedAt` | datetime? | زمان حذف نرم (Soft Delete) |
+| `DeletedBy` | long? (FK→User) | شناسه کاربر حذف‌کننده |
+| `IsDeleted` | bool | علامت Soft Delete |
+
+> این فیلدها از یک کلاس پایه `AuditableEntity` در لایه Framework به ارث می‌رسند.
+
+**ذخیره‌سازی آدرس‌ها:**
+```
+آدرس‌های کاربر و آدرس فعال (پیش‌فرض) به صورت JSON در ستون‌های:
+  - Addresses   → jsonb  (لیست همه آدرس‌ها)
+  - ActiveAddressId → long? (شناسه آدرس پیش‌فرض)
+در جدول users ذخیره می‌شوند.
+```
+
+**ساختار JSON آدرس:**
+```json
+[
+  {
+    "id": 1,
+    "label": "خانه",
+    "fullName": "علی محمدی",
+    "phone": "09121234567",
+    "province": "تهران",
+    "city": "تهران",
+    "address": "خیابان ولیعصر، پلاک ۱۰",
+    "postalCode": "1234567890",
+    "lat": 35.7219,
+    "lng": 51.3347,
+    "isDefault": true
+  }
+]
+```
+
 ### 3.2 تنظیمات کاربر
 
 | # | تنظیم | مقدار پیش‌فرض |
@@ -234,12 +301,47 @@ POST /api/profile/avatar
 - فرمت‌های مجاز: jpg, png, webp
 - Crop تصویر در مرورگر (browser-side)
 - تولید خودکار سایزها: 32x32, 64x64, 128x128, 256x256
-- ذخیره در CDN
+- URL بازگشتی: لینک داخلی سیستم (نه مستقیم MinIO/CDN)
 ```
+
+#### روش‌های ذخیره‌سازی فایل (Storage Providers)
+
+سیستم از یک **اینترفیس مشترک** برای ذخیره‌سازی فایل استفاده می‌کند تا وابستگی به هیچ پروایدر خاصی نداشته باشد:
+
+```csharp
+public interface IStorageProvider
+{
+    Task<StorageResult> UploadAsync(UploadRequest request);
+    Task<Stream> DownloadAsync(string path);
+    Task DeleteAsync(string path);
+    string GetInternalUrl(string path); // همیشه URL داخلی سیستم
+}
+```
+
+| روش | توضیح | وضعیت |
+|-----|--------|--------|
+| **FileSystem** | ذخیره در یک مسیر مشخص در پروژه (قابل تنظیم از `appsettings.json`) | ✅ پیاده‌سازی شده |
+| **MinIO** | ذخیره در سرویس MinIO (از طریق Docker اجرا می‌شود) | ✅ **پیش‌فرض** |
+| **External** | سرویس خارجی سفارشی (پیاده‌سازی `IStorageProvider` توسط تیم) | قابل توسعه |
+
+**نکات مهم:**
+- فایل پیش‌فرض با **MinIO** ذخیره می‌شود و MinIO از طریق Docker Compose اجرا می‌شود
+- **هرگز لینک مستقیم MinIO به کاربر داده نمی‌شود** – سیستم URL داخلی ثابت سرو می‌کند: `GET /files/{path}`
+- در صورت تغییر پروایدر، لینک‌های داخلی بدون تغییر باقی می‌مانند
+- نوع پروایدر از `appsettings.json` یا Environment Variable تعیین می‌شود:
+  ```json
+  "Storage": {
+    "Provider": "MinIO",  // "FileSystem" | "MinIO" | "External"
+    "FileSystem": { "BasePath": "./uploads" },
+    "MinIO": { "Endpoint": "minio:9000", "Bucket": "shop-files" }
+  }
+  ```
 
 ---
 
 ## 4. احراز هویت پیشرفته (KYC)
+
+> ⚠️ **بخش KYC در مرحله فعلی پیاده‌سازی نمی‌شود.** ساختار اولیه برای مستند بودن باقی می‌ماند اما بخش‌های 4.3 و 4.4 حذف شده‌اند.
 
 ### 4.1 سطوح KYC
 
@@ -274,20 +376,11 @@ Level 3 – Premium (مدارک تجاری کامل)
 
 ### 4.3 تأیید هویت دیجیتال
 
-| # | فرایند | جزئیات |
-|---|--------|--------|
-| 92 | OCR خودکار مدارک | استخراج اطلاعات از تصویر |
-| 93 | تأیید دستی توسط ادمین | صف بررسی |
-| 94 | Face Verification | مقایسه سلفی با مدرک |
-| 95 | Liveness Detection | جلوگیری از تصویر چاپی |
+> ⛔ **این بخش در مرحله فعلی مورد نیاز نیست و پیاده‌سازی نمی‌شود.**
 
 ### 4.4 تأیید حساب بانکی
 
-| # | روش | جزئیات |
-|---|-----|--------|
-| 96 | تأیید شماره شبا (IBAN) | اتصال به بانک مرکزی |
-| 97 | تأیید کارت بانکی | درگاه پرداخت |
-| 98 | واریز مبلغ ناچیز و تأیید | microdeposit |
+> ⛔ **این بخش در مرحله فعلی مورد نیاز نیست و پیاده‌سازی نمی‌شود.**
 
 ### 4.5 مدارک حقوقی (برای فروشندگان)
 
@@ -317,31 +410,39 @@ Level 3 – Premium (مدارک تجاری کامل)
 
 ## 5. معماری پیشنهادی
 
-### 5.1 Auth Service
+### 5.1 Auth Service (.NET 10)
 
 ```
-auth-service/
-├── controllers/
-│   ├── auth.controller.ts        # login, register, logout
-│   ├── oauth.controller.ts       # social login
-│   ├── twofa.controller.ts       # 2FA management
-│   └── session.controller.ts     # session management
-├── services/
-│   ├── jwt.service.ts            # token generation/validation
-│   ├── otp.service.ts            # OTP generation/delivery
-│   ├── kyc.service.ts            # KYC workflow
-│   └── audit.service.ts          # audit logging
-├── middleware/
-│   ├── auth.middleware.ts        # JWT verification
-│   ├── rbac.middleware.ts        # role/permission check
-│   ├── ratelimit.middleware.ts   # rate limiting
-│   └── captcha.middleware.ts     # CAPTCHA validation
-└── models/
-    ├── user.model.ts
-    ├── role.model.ts
-    ├── permission.model.ts
-    ├── session.model.ts
-    └── kyc-document.model.ts
+AppCore/Auth/
+├── Features/
+│   ├── Register/       # RegisterCommand + Handler (Wolverine)
+│   ├── Login/          # LoginCommand + Handler
+│   ├── RefreshToken/   # RefreshTokenCommand + Handler
+│   ├── TwoFactor/      # Enable2FA, Verify2FA Commands
+│   └── Captcha/        # GenerateCaptchaQuery, VerifyCaptchaCommand
+├── Data/
+│   ├── DbContext/      # AuthDbContext (EF Core)
+│   ├── Mapping/        # Mapster Profile
+│   └── Seed/           # DefaultRoles, DefaultAdmin Seed
+└── Core/
+    ├── Entities/
+    │   ├── User.cs        # Id: long
+    │   ├── Role.cs        # Id: long
+    │   ├── Permission.cs  # Id: long
+    │   ├── Session.cs     # Id: long
+    │   └── AuditLog.cs    # Id: long
+    └── Base/
+        └── AuditableEntity.cs  # CreatedAt, CreatedBy, ...
+
+Module/Auth/
+├── Caching/           # Redis-based Captcha, OTP, Session
+├── Sms/               # SMS OTP Provider (Kavenegar/Melipayamak)
+└── Email/             # Email verification
+
+Web/Controllers/
+├── AuthController.cs
+├── CaptchaController.cs
+└── SessionController.cs
 ```
 
 ### 5.2 Token Strategy
